@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DataConnection, Peer } from "peerjs";
 import {
   Button,
@@ -78,22 +78,20 @@ export default function Home() {
     });
   };
 
-  const handleConnection = (connection: DataConnection) => {
-    connection.on("data", (rawData) => {
+  const handleConnectionData = useCallback(
+    (connection: DataConnection, rawData: unknown) => {
       const data = rawData as ConnectionData;
 
       switch (data.type) {
         case "message":
-          console.log(messageList);
-          setMessageList([
-            ...messageList,
+          setMessageList((prev) => [
+            ...prev,
             {
               sender: connection,
               message: data.data.message,
               time: new Date(),
             },
           ]);
-          console.log(messageList);
           break;
 
         default:
@@ -104,29 +102,38 @@ export default function Home() {
           });
           return;
       }
-    });
+    },
+    [messageList]
+  );
 
-    connection.on("close", () => {
-      setConnectionList(
-        connectionList.filter((conn) => conn.peer == connection.peer)
-      );
-      notification.info({
-        message: "Device Disconnected",
-        description: `ID: ${connection.peer}`,
+  const handleConnection = useCallback(
+    (connection: DataConnection) => {
+      connection.on("data", (data) => {
+        handleConnectionData(connection, data);
       });
-    });
 
-    connection.on("error", (error) => {
-      console.error(error);
-      notification.error({
-        message: "Connection Error",
-        description: error.message,
+      connection.on("close", () => {
+        setConnectionList(
+          connectionList.filter((conn) => conn.peer == connection.peer)
+        );
+        notification.info({
+          message: "Device Disconnected",
+          description: `ID: ${connection.peer}`,
+        });
       });
-    });
 
-    const newConnectionList = [...connectionList, connection];
-    setConnectionList(newConnectionList);
-  };
+      connection.on("error", (error) => {
+        console.error(error);
+        notification.error({
+          message: "Connection Error",
+          description: error.message,
+        });
+      });
+
+      setConnectionList((prev) => [...prev, connection]);
+    },
+    [handleConnectionData, connectionList]
+  );
 
   return (
     <Row>
