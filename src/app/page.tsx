@@ -57,7 +57,11 @@ export default function Home() {
       setConnecting(false);
       return;
     }
-    console.log(targetId);
+    if (connectionList.map((i) => i.peer).includes(targetId)) {
+      message.error("Device is already connected");
+      setConnecting(false);
+      return;
+    }
     const connection = peer.connect(targetId);
     connection.on("open", () => {
       setConnecting(false);
