@@ -2,15 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { DataConnection, Peer } from "peerjs";
-import { Button, Col, Input, Row, Space, notification } from "antd";
+import {
+  Button,
+  Col,
+  Input,
+  Row,
+  Select,
+  Space,
+  notification,
+  message,
+} from "antd";
+import { Message } from "@/types/ConnectionData/Message";
+import { ConnectionData } from "@/types/ConnectionData";
 
 let peer: Peer | null = null;
 
 export default function Home() {
   const [id, setId] = useState("");
   const [targetId, setTargetId] = useState("");
-  const [message, setMessage] = useState("");
+  const [messageContent, setMessageContent] = useState("");
+  const [sendTarget, setSendTarget] = useState<DataConnection | null>(null);
   const [connectionList, setConnectionList] = useState<DataConnection[]>([]);
+  const [messageList, setMessageList] = useState<Message[]>([]);
 
   const [initLoading, setInitLoading] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -30,31 +43,7 @@ export default function Home() {
     });
 
     peer.on("connection", (connection) => {
-      console.log(connection);
-
-      connection.on("data", (data) => {
-        console.log(data);
-      });
-
-      connection.on("close", () => {
-        setConnectionList(
-          connectionList.filter((conn) => conn.peer == connection.peer)
-        );
-        notification.info({
-          message: "Device Disconnected",
-          description: `ID: ${connection.peer}`,
-        });
-      });
-
-      connection.on("error", (error) => {
-        console.error(error);
-        notification.error({
-          message: "Connection Error",
-          description: error.message,
-        });
-      });
-
-      setConnectionList([connection, ...connectionList]);
+      handleConnection(connection);
       notification.info({
         message: `Device Connected`,
         description: `ID: ${connection.peer}`,
@@ -72,24 +61,71 @@ export default function Home() {
     const connection = peer.connect(targetId);
     connection.on("open", () => {
       setConnecting(false);
+      handleConnection(connection);
       notification.success({
         message: `Device Connected`,
         description: `ID: ${targetId}`,
       });
-      console.log(`target ${targetId} connection opend`);
     });
-    setConnectionList([connection, ...connectionList]);
   };
 
   const sendMessage = () => {
-    const target = connectionList[0];
-
-    target.send({
+    sendTarget?.send({
       type: "message",
       data: {
-        message,
+        message: messageContent,
       },
     });
+  };
+
+  const handleConnection = (connection: DataConnection) => {
+    connection.on("data", (rawData) => {
+      const data = rawData as ConnectionData;
+
+      switch (data.type) {
+        case "message":
+          console.log(messageList);
+          setMessageList([
+            ...messageList,
+            {
+              sender: connection,
+              message: data.data.message,
+              time: new Date(),
+            },
+          ]);
+          console.log(messageList);
+          break;
+
+        default:
+          console.error(data);
+          notification.error({
+            message: "Unknown Message Type",
+            description: `Type: ${data.type}`,
+          });
+          return;
+      }
+    });
+
+    connection.on("close", () => {
+      setConnectionList(
+        connectionList.filter((conn) => conn.peer == connection.peer)
+      );
+      notification.info({
+        message: "Device Disconnected",
+        description: `ID: ${connection.peer}`,
+      });
+    });
+
+    connection.on("error", (error) => {
+      console.error(error);
+      notification.error({
+        message: "Connection Error",
+        description: error.message,
+      });
+    });
+
+    const newConnectionList = [...connectionList, connection];
+    setConnectionList(newConnectionList);
   };
 
   return (
@@ -97,9 +133,24 @@ export default function Home() {
       <Col span={12}>
         <Space direction="vertical" className="p-10">
           <Space.Compact>
-            <Input addonBefore="Device ID" value={id} style={{ width: 480 }} />
+            <Input addonBefore="Device ID" value={id} style={{ width: 360 }} />
             <Button type="primary" onClick={peerInit} loading={initLoading}>
               Get
+            </Button>
+            <Button
+              onClick={() => {
+                navigator.clipboard
+                  .writeText(id)
+                  .then(() => {
+                    message.success("Copy Succcess");
+                  })
+                  .catch((error) => {
+                    console.error(error);
+                    message.error("Copy failed");
+                  });
+              }}
+            >
+              Copy
             </Button>
           </Space.Compact>
 
@@ -110,7 +161,7 @@ export default function Home() {
               onChange={(e) => {
                 setTargetId(e.target.value);
               }}
-              style={{ width: 480 }}
+              style={{ width: 360 }}
             />
             <Button
               type="primary"
@@ -122,26 +173,47 @@ export default function Home() {
             </Button>
           </Space.Compact>
 
-          <Space direction="vertical">
-            {connectionList.map(({ peer }, index) => (
-              <div key={index}>{peer}</div>
-            ))}
-          </Space>
+          <Select
+            placeholder="Send Target"
+            options={connectionList.map((v) => {
+              return {
+                value: v.peer,
+                label: v.peer,
+              };
+            })}
+            value={sendTarget?.peer}
+            onChange={(v: string) => {
+              setSendTarget(connectionList.filter((i) => i.peer == v)[0]);
+            }}
+            style={{ width: "100%" }}
+          ></Select>
         </Space>
       </Col>
 
       <Col span={12}>
         <Space direction="vertical" className="p-10">
-          <Input.TextArea
-            placeholder="Type something here..."
-            value={message}
-            onChange={(e) => {
-              setMessage(e.target.value);
-            }}
-          />
-          <Button type="primary" onClick={sendMessage}>
-            Send
-          </Button>
+          <Space direction="vertical">
+            <Input.TextArea
+              placeholder="Type something here..."
+              value={messageContent}
+              onChange={(e) => {
+                setMessageContent(e.target.value);
+              }}
+              style={{ width: 360 }}
+            />
+            <Button type="primary" onClick={sendMessage}>
+              Send
+            </Button>
+          </Space>
+
+          <Space direction="vertical">
+            {messageList.map((messageItem, index) => (
+              <div key={index}>
+                {messageItem.time.toLocaleString()} - {messageItem.sender.peer}:{" "}
+                {messageItem.message}
+              </div>
+            ))}
+          </Space>
         </Space>
       </Col>
     </Row>
